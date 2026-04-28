@@ -1,0 +1,318 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>VERSION -X STANDALONE</title>
+    <!-- React & Libraries -->
+    <script src="https://unpkg.com/react@18/umd/react.production.min.js"></script>
+    <script src="https://unpkg.com/react-dom@18/umd/react-dom.production.min.js"></script>
+    <script src="https://unpkg.com/@babel/standalone/babel.min.js"></script>
+    <script src="https://unpkg.com/framer-motion@10.16.4/dist/framer-motion.js"></script>
+    <script src="https://unpkg.com/lucide@0.290.0/dist/umd/lucide.js"></script>
+    <!-- Tailwind Play CDN -->
+    <script src="https://cdn.tailwindcss.com"></script>
+    <link href="https://fonts.googleapis.com/css2?family=Orbitron:wght@400;700;900&family=JetBrains+Mono:wght@400;700&display=swap" rel="stylesheet">
+    
+    <style>
+        :root {
+            --neon-green: #00ff41;
+            --neon-red: #ff003c;
+            --neon-gold: #ffd700;
+        }
+        body {
+            background: radial-gradient(circle at center, #0a2510 0%, #020202 100%);
+            color: white;
+            font-family: 'JetBrains Mono', monospace;
+            margin: 0;
+            overflow-x: hidden;
+        }
+        body::before {
+            content: " ";
+            position: fixed;
+            top: 0; left: 0; width: 100%; height: 100%;
+            pointer-events: none;
+            z-index: 9999;
+            background: linear-gradient(rgba(18, 16, 16, 0) 50%, rgba(0, 0, 0, 0.25) 50%), 
+                        linear-gradient(90deg, rgba(255, 0, 0, 0.02), rgba(0, 255, 0, 0.01), rgba(0, 0, 255, 0.02));
+            background-size: 100% 4px, 3px 100%;
+        }
+        .font-display { font-family: 'Orbitron', sans-serif; }
+        .neon-text {
+            color: var(--neon-green);
+            text-shadow: 0 0 10px rgba(0, 255, 65, 0.7);
+        }
+        .neon-border {
+            border: 1px solid rgba(0, 255, 65, 0.4);
+            box-shadow: 0 0 20px rgba(0, 255, 65, 0.1);
+            background: rgba(0, 20, 10, 0.85);
+            backdrop-filter: blur(8px);
+        }
+        .glitch-text { animation: glitch 3s infinite; }
+        @keyframes glitch {
+            0% { transform: translate(0); }
+            2% { transform: translate(-2px, 1px); }
+            4% { transform: translate(2px, -1px); }
+            6% { transform: translate(0); }
+            100% { transform: translate(0); }
+        }
+        /* Scrollbar */
+        ::-webkit-scrollbar { width: 5px; }
+        ::-webkit-scrollbar-track { background: black; }
+        ::-webkit-scrollbar-thumb { background: rgba(0, 255, 65, 0.2); border-radius: 10px; }
+    </style>
+</head>
+<body>
+    <div id="root"></div>
+
+    <script type="text/babel">
+        const { useState, useEffect, useRef } = React;
+        const { motion, AnimatePresence } = FramerMotion;
+
+        const MODES = ['30S', '1M'];
+        const API_URLS = {
+            '30S': 'https://draw.ar-lottery01.com/WinGo/WinGo_30S/GetHistoryIssuePage.json',
+            '1M': 'https://draw.ar-lottery01.com/WinGo/WinGo_1M/GetHistoryIssuePage.json'
+        };
+
+        function App() {
+            const [isAuthenticated, setIsAuthenticated] = useState(false);
+            const [accessKey, setAccessKey] = useState('');
+            const [mode, setMode] = useState('1M');
+            const [prediction, setPrediction] = useState('WAIT');
+            const [sureNumbers, setSureNumbers] = useState([0, 0]);
+            const [period, setPeriod] = useState('---');
+            const [counts, setCounts] = useState({ win: 0, loss: 0, jackpot: 0, total: 0 });
+            const [history, setHistory] = useState([]);
+            const [lastIssue, setLastIssue] = useState(null);
+            
+            const [consecutiveLosses, setConsecutiveLosses] = useState(0);
+            const [samePredCount, setSamePredCount] = useState(1);
+            const [lastResult, setLastResult] = useState(null);
+
+            const sWin = useRef(new Audio('https://files.catbox.moe/dd3kew.ogg'));
+            const sLoss = useRef(new Audio('https://files.catbox.moe/oqzc64.mp3'));
+
+            useEffect(() => {
+                const saved = localStorage.getItem('vip_access');
+                if (saved === 'true') setIsAuthenticated(true);
+            }, []);
+
+            const handleLogin = () => {
+                if (accessKey === 'fuck') {
+                    setIsAuthenticated(true);
+                    localStorage.setItem('vip_access', 'true');
+                } else {
+                    alert('🚫 INCORRECT ACCESS KEY');
+                }
+            };
+
+            useEffect(() => {
+                if (!isAuthenticated) return;
+
+                const interval = setInterval(async () => {
+                    try {
+                        const response = await fetch(`${API_URLS[mode]}?t=${Date.now()}`);
+                        const data = await response.json();
+                        const currentData = data.data.list[0];
+
+                        if (currentData.issueNumber !== lastIssue) {
+                            const numbers = data.data.list.slice(0, 10).map(item => parseInt(item.number));
+                            
+                            const lastPred = prediction;
+                            let basePred;
+
+                            if (lastResult === 'win' || lastResult === 'jackpot') {
+                                basePred = (lastPred === 'WAIT' || !lastPred) ? 'BIG' : lastPred;
+                            } else if (lastResult === 'loss') {
+                                basePred = lastPred === 'BIG' ? 'SMALL' : 'BIG';
+                            } else {
+                                const bigCount = numbers.filter(n => n >= 5).length;
+                                const smallCount = numbers.length - bigCount;
+                                basePred = bigCount > smallCount ? 'BIG' : 'SMALL';
+                            }
+
+                            let newConsecLoss = lastResult === 'loss' ? consecutiveLosses + 1 : 0;
+                            if (newConsecLoss >= 3) {
+                                const last5 = numbers.slice(0, 5);
+                                const big5 = last5.filter(n => n >= 5).length;
+                                const small5 = last5.length - big5;
+                                basePred = big5 >= small5 ? 'BIG' : 'SMALL';
+                                newConsecLoss = 0;
+                            }
+                            setConsecutiveLosses(newConsecLoss);
+
+                            let newSamePredCount = basePred === lastPred ? samePredCount + 1 : 1;
+                            let finalPred = basePred;
+                            if (newSamePredCount > 2) {
+                                finalPred = basePred === 'BIG' ? 'SMALL' : 'BIG';
+                                newSamePredCount = 1;
+                            }
+                            setSamePredCount(newSamePredCount);
+                            setPrediction(finalPred);
+
+                            const mainPool = finalPred === 'BIG' ? [6, 7, 8, 9] : [0, 1, 2, 3];
+                            const oppositePool = finalPred === 'BIG' ? [0, 1, 2, 3] : [6, 7, 8, 9];
+                            const mainNum = mainPool[Math.floor(Math.random() * mainPool.length)];
+                            const secNum = oppositePool[Math.floor(Math.random() * oppositePool.length)];
+                            setSureNumbers([mainNum, secNum]);
+
+                            const nextPeriod = (BigInt(currentData.issueNumber) + 1n).toString();
+                            setPeriod(nextPeriod);
+
+                            if (lastIssue) {
+                                const lastN = parseInt(currentData.number);
+                                const lastSize = lastN >= 5 ? 'BIG' : 'SMALL';
+                                let status;
+
+                                if (lastN === sureNumbers[0] || lastN === sureNumbers[1]) {
+                                    status = 'JACKPOT';
+                                    setCounts(prev => ({ ...prev, jackpot: prev.jackpot + 1, win: prev.win + 1, total: prev.total + 1 }));
+                                    setLastResult('jackpot');
+                                    sWin.current.play().catch(() => {});
+                                } else if (lastSize === prediction) {
+                                    status = 'WIN';
+                                    setCounts(prev => ({ ...prev, win: prev.win + 1, total: prev.total + 1 }));
+                                    setLastResult('win');
+                                    sWin.current.play().catch(() => {});
+                                } else {
+                                    status = 'LOSS';
+                                    setCounts(prev => ({ ...prev, loss: prev.loss + 1, total: prev.total + 1 }));
+                                    setLastResult('loss');
+                                    sLoss.current.play().catch(() => {});
+                                }
+                                
+                                setHistory(prev => [{
+                                    id: currentData.issueNumber.slice(-3),
+                                    pred: prediction,
+                                    num: lastN,
+                                    status: status,
+                                    timestamp: Date.now()
+                                }, ...prev].slice(0, 50));
+                            }
+                            setLastIssue(currentData.issueNumber);
+                        }
+                    } catch (e) { console.error(e); }
+                }, 3000);
+                return () => clearInterval(interval);
+            }, [isAuthenticated, mode, lastIssue, prediction, sureNumbers, consecutiveLosses, samePredCount, lastResult]);
+
+            if (!isAuthenticated) {
+                return (
+                    <div className="min-h-screen flex items-center justify-center p-4">
+                        <div className="w-full max-w-sm neon-border p-8 text-center">
+                            <h1 className="font-display text-2xl font-black neon-text mb-8">VERSION -X</h1>
+                            <input 
+                                type="password" 
+                                placeholder="ACCESS KEY" 
+                                className="w-full bg-black/50 border border-neon-green/30 p-3 mb-4 text-center focus:outline-none"
+                                value={accessKey}
+                                onChange={e => setAccessKey(e.target.value)}
+                            />
+                            <button 
+                                onClick={handleLogin}
+                                className="w-full p-4 bg-neon-green text-black font-display font-black tracking-widest"
+                            >GRANT ACCESS</button>
+                        </div>
+                    </div>
+                );
+            }
+
+            return (
+                <div className="min-h-screen flex flex-col items-center p-4 gap-6 pb-20">
+                    <div className="text-center mt-6">
+                        <h1 className="font-display text-5xl font-black neon-text glitch-text">VERSION -X</h1>
+                        <p className="text-[10px] tracking-[0.5em] opacity-40">PRD_PROTOCOL : ACTIVE</p>
+                    </div>
+
+                    <div className="flex gap-2 p-1 neon-border w-full max-w-[280px]">
+                        {MODES.map(m => (
+                            <button key={m} onClick={() => setMode(m)} className={`flex-1 py-2 font-display text-[10px] z-10 ${mode === m ? 'bg-neon-green text-black' : 'text-white/60'}`}>
+                                {m} GAME
+                            </button>
+                        ))}
+                    </div>
+
+                    <div className="w-full max-w-sm neon-border p-10 flex flex-col items-center gap-8 relative overflow-hidden">
+                        <div className="p-2 border-x border-neon-green/20">
+                            <p className="text-[8px] opacity-30 text-center mb-1">SEQUENCE_ID</p>
+                            <p className="font-display font-bold text-center">{period}</p>
+                        </div>
+
+                        <div className="flex flex-col items-center">
+                            <AnimatePresence mode="wait">
+                                <motion.div 
+                                    key={prediction}
+                                    initial={{ opacity: 0, scale: 0.8 }}
+                                    animate={{ opacity: 1, scale: 1 }}
+                                    className="text-7xl font-display font-black neon-text"
+                                >
+                                    {prediction}
+                                </motion.div>
+                            </AnimatePresence>
+                            <p className="text-neon-gold text-sm font-bold mt-4">SURE NUMBERS: {sureNumbers.join(' | ')}</p>
+                        </div>
+
+                        <div className="grid grid-cols-4 gap-2 w-full">
+                            {[
+                                { l: 'CONFIRM', v: counts.win, c: 'text-neon-green' },
+                                { l: 'REJECT', v: counts.loss, c: 'text-neon-red' },
+                                { l: 'JACKPOT', v: counts.jackpot, c: 'text-neon-gold' },
+                                { l: 'CYCLES', v: counts.total, c: 'text-white/40' }
+                            ].map(s => (
+                                <div key={s.l} className="bg-neon-green/5 border border-neon-green/10 p-2 text-center">
+                                    <p className="text-[7px] opacity-30">{s.l}</p>
+                                    <p className={`font-display font-bold ${s.c}`}>{s.v}</p>
+                                </div>
+                            ))}
+                        </div>
+                    </div>
+
+                    <div className="w-full max-w-sm neon-border overflow-hidden">
+                        <div className="p-4 border-b border-neon-green/10 flex justify-between items-center">
+                            <span className="text-[10px] font-display neon-text">SEQ_HISTORY_DAEMON</span>
+                            <button onClick={() => { setHistory([]); setCounts({win:0, loss:0, jackpot:0, total:0}); }} className="opacity-40 text-xs">RESET</button>
+                        </div>
+                        <div className="max-h-[300px] overflow-y-auto">
+                            <table className="w-full text-[10px] text-left">
+                                <thead className="bg-black text-white/20">
+                                    <tr>
+                                        <th className="p-3">ID</th>
+                                        <th className="p-3">PRED</th>
+                                        <th className="p-3">NUM</th>
+                                        <th className="p-3 text-right">STATUS</th>
+                                    </tr>
+                                </thead>
+                                <tbody className="divide-y divide-white/5">
+                                    {history.map((h, i) => (
+                                        <tr key={i} className="hover:bg-white/5 transition-colors">
+                                            <td className="p-3 text-white/40">#{h.id}</td>
+                                            <td className="p-3 font-bold">{h.pred}</td>
+                                            <td className="p-3 font-bold">{h.num}</td>
+                                            <td className={`p-3 text-right font-black ${h.status === 'JACKPOT' ? 'text-neon-gold' : h.status === 'WIN' ? 'text-neon-green' : 'text-neon-red'}`}>{h.status}</td>
+                                        </tr>
+                                    ))}
+                                </tbody>
+                            </table>
+                        </div>
+                    </div>
+
+                    <div className="fixed bottom-6 right-6">
+                        <button 
+                            onClick={() => window.open('https://t.me/VERSION_X_COMMUNITY', '_blank')}
+                            className="w-14 h-14 rounded-full bg-neon-green flex items-center justify-center shadow-[0_0_20px_rgba(0,255,65,0.4)]"
+                        >
+                            <svg className="w-8 h-8 text-black" viewBox="0 0 24 24" fill="currentColor">
+                                <path d="M13,10V3L4,14H11V21L20,10H13Z" />
+                            </svg>
+                        </button>
+                    </div>
+                </div>
+            );
+        }
+
+        const root = ReactDOM.createRoot(document.getElementById('root'));
+        root.render(<App />);
+    </script>
+</body>
+</html>
